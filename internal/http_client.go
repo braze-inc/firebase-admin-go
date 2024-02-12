@@ -73,7 +73,16 @@ func NewHTTPClient(ctx context.Context, opts ...option.ClientOption) (*HTTPClien
 // ServiceUnavailable (503) error. Repeatedly failing requests are retried up to 4 times
 // with exponential backoff. Retry delay is never longer than 2 minutes.
 func WithDefaultRetryConfig(hc *http.Client) *HTTPClient {
-	twoMinutes := time.Duration(2) * time.Minute
+	// <Braze Modification>
+	// In android-push-service:
+	// 		* globalRequestTimeout = 60s
+	//		* clientTimeout = 54s
+	//		* payload processing happens, unknown max time but all in-memory (reflection) - observed max a few seconds
+	//		* then response gathering is another thing we leave time for, so individual request timeout is 2/3 the time
+	//			left, or a max of 36s assuming instantaneous payload processing.
+	// So we turn this down from the default of 2m to 30s
+	// Ideally this would be configurable and not a fork: https://github.com/firebase/firebase-admin-go/issues/476
+	maxDelay := time.Duration(30) * time.Second
 	return &HTTPClient{
 		Client: hc,
 		RetryConfig: &RetryConfig{
@@ -81,10 +90,12 @@ func WithDefaultRetryConfig(hc *http.Client) *HTTPClient {
 			CheckForRetry: retryNetworkAndHTTPErrors(
 				http.StatusServiceUnavailable,
 			),
-			ExpBackoffFactor: 0.5,
-			MaxDelay:         &twoMinutes,
+			/* lowered from 0.5 to give greater chance of retry actually happening given the lowered maxDelay */
+			ExpBackoffFactor: 0.1,
+			MaxDelay:         &maxDelay,
 		},
 	}
+	// </Braze Modification>
 }
 
 // Request contains all the parameters required to construct an outgoing HTTP request.
